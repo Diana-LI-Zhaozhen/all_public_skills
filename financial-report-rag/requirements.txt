@@ -1,0 +1,32 @@
+# Core
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+tabulate>=0.9       # for DataFrame.to_markdown
+
+# File parsing
+pdfplumber>=0.10
+beautifulsoup4>=4.12
+lxml>=4.9
+openpyxl>=3.1
+xmlschema>=2.0
+
+# Indexing & retrieval
+sentence-transformers>=2.2
+faiss-cpu>=1.7
+rank-bm25>=0.2.2
+duckdb>=0.9
+
+# Reranker
+transformers>=4.30
+torch>=2.0
+
+# LLM (choose one or more)
+openai>=1.0              # used for DeepSeek OpenAI-compatible API
+# llama-cpp-python>=0.3  # optional local deployment backend
+
+# Utilities
+tiktoken>=0.5
+
+# Testing
+pytest>=7.0
