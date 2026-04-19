@@ -1,0 +1,15 @@
+{
+  "input_file": "C:\\Users\\zhaozhen\\Desktop\\financial-report-rag\\indexes-smoke\\baba_20250331_20F.html",
+  "total_chunks": 2,
+  "text_chunks": 1,
+  "table_chunks": 1,
+  "table_preview_files": [
+    "table_000_html_table_1.md"
+  ],
+  "outputs": [
+    "parsed_chunks.jsonl",
+    "parse_summary.json",
+    "parse_summary.txt",
+    "table_000_html_table_1.md"
+  ]
+}
