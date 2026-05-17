@@ -15,6 +15,17 @@ metadata:
 
 # Insurance Financial Analysis
 
+## Data Source Integrity
+
+**ALL data MUST come from annual/semi-annual report PDFs (年报/半年报) obtained via `all-market-fillings-fetch`.**
+- Do NOT use web search for financial figures
+- Do NOT use financial data APIs (yfinance, East Money, etc.)
+- Do NOT use analyst reports or third-party summaries
+- IFRS 17 footnotes (CSM, insurance finance, OCI) are ONLY in official PDFs
+
+**After pymupdf extraction, ALWAYS verify text quality:**
+- Search for numerical values — if only Chinese chars appear but table numbers are blank, the PDF has font encoding issues → use OCR fallback
+
 ## Overview
 
 Analyze Chinese and Hong Kong Life insurance companies' financial reports under IFRS 17 and IFRS 9. This skill covers the end-to-end workflow: data acquisition, structured data extraction, IFRS 17 metric calculation, investment portfolio decomposition, and earnings-quality assessment.
@@ -74,18 +85,31 @@ python scripts/fetch_cninfo_notices.py \
 
 ### Step 2: Text Extraction
 
-Download PDFs and extract structured text:
+Download PDFs and extract structured text. Store downloaded PDFs locally in `references/pdfs/<company>/` to avoid re-downloading.
 
 ```python
 import fitz
 doc = fitz.open("<pdf_path>")
-text = ''
+text = ""
 for i, page in enumerate(doc):
     text += page.get_text()
 doc.close()
 ```
 
 Insurer annual reports are typically 200-400 pages. Target extraction size: 200K-500K chars for a 2-year report.
+
+**🔍 After extraction, ALWAYS verify text quality:**
+1. Check that the extracted text file is a reasonable size (not empty, not just a few KB)
+2. Search for key numerical sections — if Chinese text is present but numbers in tables are missing/blank, the PDF has font encoding issues
+3. For problematic PDFs, try: `page.get_text("text")` with different parameters, or fall back to OCR
+
+**To check extraction quality via terminal:**
+```bash
+# Check if numbers are present in key financial sections
+grep -c '保险服务收入' extracted.txt   # Should find the section
+grep -oP '[0-9,]+' extracted.txt | head -20  # Should show actual numbers
+```
+If `grep -oP '[0-9,]+'` returns dates (2024, 2025) but no large numbers, the PDF likely has font encoding issues.**
 
 ### Step 3: Extract IFRS 17 Key Metrics
 
@@ -198,7 +222,6 @@ When comparing two insurers side-by-side, add this dimension:
 **c) Analyze CSM trajectory as the #1 comparison metric:**
 - CSM growing + new business CSM healthy → future profit growth assured
 - CSM declining (even if profit is high) → watch for structural erosion
-- Key insight from this session: 中国人寿 CSM +3.5% vs 中国平安 CSM -0.8%. Despite Ping An's operating profit growing, its future profit reservoir is shrinking.
 
 **d) Investment portfolio structure comparison:**
 - Classify both insurers' portfolios into comparable categories (bond/equity/cash/other)
@@ -230,10 +253,16 @@ Output a structured report covering:
 - ❌ **Don't use accountant-alice for insurers** — it's inventory/COGS-based, completely wrong for insurance
 - ❌ **Don't rely only on 利润表 summary numbers** — IFRS 17 requires reading the notes (附注) for CSM, insurance finance splits, and investment portfolio detail
 - ❌ **Don't assume "投资收益" in the P&L is the same as "总投资收益"** — the P&L line only shows a portion; total investment income adds fair value changes, interest income, and subtracts impairments
-- ❌ **Some companies have life insurance as **only one part** of a larger, diversified financial group (e.g., Ping An, PICC, Xinhua Insurance). Do not use their consolidated market data (e.g., total assets, ROE, asset classification) as a proxy for the life insurance segment without adjustment.**
+- ❌ **Some companies have life insurance as only one part of a larger, diversified financial group (e.g., Ping An, PICC, Xinhua Insurance). Do not use their consolidated market data (e.g., total assets, ROE, asset classification) as a proxy for the life insurance segment without adjustment.**
+- ❌ **Don't rely on HKEX feed for historical annual reports** — the HKEXNews feed API (used by `fetch_hkex_notices.py`) only returns filings from the last ~7 days. Annual reports filed months ago are not accessible through this feed. Use HKEX披露易 historical search or company IR websites instead.
+- ❌ **Don't expect full IFRS 17 data from SEC for Canadian 40-F filers** — Manulife (MFC) and Sun Life (SLF) file cover-only iXBRL documents (~160-200KB) with SEC. The full financial statements are submitted as separate exhibits not captured in the primary text. Use SEDAR+ or company IR websites for these.
+- ❌ **Don't assume a single HKEX filing is the annual report** — Companies like AIA file TWO PDFs on the same date: a notification letter (~300KB, telling shareholders the report is available online) AND the actual annual report (3-8MB). The letter-only PDF has ~14KB of text, while the real report has hundreds of pages. If the extracted text is only ~10KB, check for a second filing.
+- ❌ **Don't assume pymupdf can extract all PDF content** — Some Chinese insurer PDFs (e.g., PICC 2025 annual report 12MB) have font encoding issues where pymupdf extracts Chinese characters but NOT the numerical table data. After extraction, verify that numbers are present. If missing, use OCR (pytesseract) as fallback.
+- ❌ **Don't trust SEC EDGAR ticker resolution for OTC ADRs** — AIA's ADR (AAGIY) and other OTC symbols are NOT in SEC's company_tickers.json. The resolver will silently fail. Use HKEX, the company's home exchange, or primary listing instead.
 - ✅ Always extract both the income statement and the insurance contract notes (保险合同附注)
-- ✅ For a **pure‑play life insurer** (e.g., China Life, AIA, Prudential, Manulife, Sun Life), fill in its own stock codes under **A‑share**, **H‑share**, or **ADR** as applicable. In the `Remarks` column, briefly state the listing status, e.g., *“Listed on A‑share, H‑share, and ADR (OTC/NYSE)”*.
-- ✅ If the life insurance entity is **not independently listed** but is a wholly owned subsidiary / business segment of a listed parent company (e.g., HSBC Life, BOC Life), **fill the parent company’s stock codes** into the corresponding market columns. In `Remarks`, explicitly note: *“Not independently listed. Parent company [Name] (code) is shown instead.”*
+- ✅ After pymupdf text extraction, always verify: (1) Chinese text present, (2) numerical values present, (3) key sections like profit table and CSM note are recognizable. If numbers are missing from tables → font encoding issue → need OCR.
+- ✅ For a **pure‑play life insurer** (e.g., China Life, AIA, Prudential, Manulife, Sun Life), fill in its own stock codes under **A‑share**, **H‑share**, or **ADR** as applicable. In the `Remarks` column, briefly state the listing status, e.g., *"Listed on A‑share, H‑share, and ADR (OTC/NYSE)"*.
+- ✅ If the life insurance entity is **not independently listed** but is a wholly owned subsidiary / business segment of a listed parent company (e.g., HSBC Life, BOC Life), **fill the parent company's stock codes** into the corresponding market columns. In `Remarks`, explicitly note: *"Not independently listed. Parent company [Name] (code) is shown instead."*
 
 ### IFRS 17 Interpretation
 - ❌ **Don't read "保险服务业绩" as "underwriting profit"** — it's not the same as old GAAP "承保利润". IFRS 17 splits insurance finance differently.
@@ -244,13 +273,12 @@ Output a structured report covering:
 ### Company-Specific
 | Company | Warning |
 |---------|---------|
-| **Xinhua Insurance (新华保险)** & **PICC (中国人保)** | Their business mix differs significantly from pure life insurers. PICC has large health and property/casualty exposure; Xinhua’s composition also includes group/health business. **Always check segment reporting before using consolidated figures.** |
+| **Xinhua Insurance (新华保险)** & **PICC (中国人保)** | Their business mix differs significantly from pure life insurers. PICC has large health and property/casualty exposure; Xinhua's composition also includes group/health business. **Always check segment reporting before using consolidated figures.** |
 | **Ping An Insurance (中国平安)** | A composite of insurance + banking + asset management. The consolidated group data **cannot** be treated as insurance‑only data. |
 | | – Group total assets (~13.9T RMB) include ~3.4T bank loans and ~3.6T deposits → **not insurance assets**. |
-| | – The insurance investment portfolio is ~6.49T RMB, **not** the group’s total financial assets (~7.82T). |
+| | – The insurance investment portfolio is ~6.49T RMB, **not** the group's total financial assets (~7.82T). |
 | | – Group ROE (~14%) is diluted by banking; the insurance segment ROE is higher (~21%). |
 | | – Ping An uses **债权型/股权型** (debt/equity‑style) asset classification, while pure insurers use **固定到期日/权益类** (fixed maturity/equity). This difference matters when comparing portfolio structures directly. |
-
 
 ## Verification
 
@@ -265,9 +293,12 @@ After analysis, verify:
 
 ## References
 
-See `references/` directory for worked examples:
+See `references/` directory per-company analysis files:
 - `china-life.md` — Full analysis of 中国人寿 under IFRS 17. Income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights.
 - `ping-an.md` — Full analysis of 中国平安 under IFRS 17. Consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio analysis.
+- `cpic.md`, `xinhua.md`, `picc.md`, `aia.md`, `prudential.md`, `manulife.md`, `sun-life.md`, `hsbc-life.md`, `boc-life.md` — Company profiles with stock codes and listing status. Analysis summaries populated after PDF extraction.
+
+PDFs are stored locally in `references/pdfs/<company>/` to avoid re-downloading.
 
 ## See Also
 

@@ -232,3 +232,4 @@ Key insight: Ping An's **diversification works** — insurance (life + P&C) + ba
 - 营运利润 is a non-GAAP (non-CAS) metric unique to Ping An — do not compare directly with competitors' "operating profit"
 - The 2024 annual report is ~11.5MB, 2025 is ~9.5MB — both PDFs have good text extraction quality
 - Extraction method: pymupdf (fitz) for text parsing of PDF
+- Local PDFs stored in: references/pdfs/ping-an/

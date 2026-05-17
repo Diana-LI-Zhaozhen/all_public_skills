@@ -2,6 +2,8 @@
 ## Annual Reports 2024 & 2025 (CNInfo filings)
 ### Analyzed: 2026-05-14
 
+> ✅ **Pure life insurer**: China Life is a pure-play life insurance company. Its consolidated financials directly represent its insurance operations — no banking or non-insurance segments to decompose. Group-level data can be used directly.
+
 ## Filing Details
 
 | Report | Filing Date | CNInfo PDF URL |
@@ -101,7 +103,7 @@
 | 综合偿付能力充足率 | 174.01% | — | — |
 | 核心偿付能力充足率 | 128.77% | — | — |
 
-## Analytical Insights (from actual analysis)
+## Analytical Insights
 
 ### Profit Attribution
 - 2025 profit growth (+44.1%) was almost entirely investment-driven
@@ -134,3 +136,4 @@
 - 2023 figures restated for IFRS 17 adoption; 2024-2025 figures directly comparable
 - The 2024 annual report is ~13MB (scanned); 2025 report is ~5MB (born-digital text)
 - Extraction method: pymupdf (fitz) for text parsing of PDF
+- Local PDFs stored in: references/pdfs/china-life/
