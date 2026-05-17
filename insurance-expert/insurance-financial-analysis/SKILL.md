@@ -370,7 +370,7 @@ doc.close()
 "
 ```
 
-**Solution A: OCR with Tesseract (Recommended)**
+**Solution A: OCR with Tesseract (Recommended if sudo available)**
 ```bash
 sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng
 pip install pytesseract Pillow pymupdf
@@ -379,6 +379,29 @@ Then use the script at `scripts/ocr_problematic_pdf.py`:
 ```bash
 python3 scripts/ocr_problematic_pdf.py <input.pdf> <output.txt> --dpi 300
 ```
+
+**Solution A2: OCR with EasyOCR (No sudo needed - pip only)**
+If tesseract cannot be installed (no sudo), use EasyOCR which is pure Python:
+```bash
+pip install easyocr torch
+```
+Then OCR critical pages strategically:
+```python
+import fitz, easyocr, numpy as np
+from PIL import Image
+
+reader = easyocr.Reader(['ch_sim', 'en'], gpu=False)
+doc = fitz.open("problem.pdf")
+# OCR only pages with financial tables (not all 278 pages)
+for pg in [127, 128, 130, 131, 213, 214]:  # key pages
+    page = doc[pg-1]
+    pix = page.get_pixmap(dpi=150)  # 150 DPI is sufficient
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    results = reader.readtext(np.array(img), paragraph=False)
+    texts = [t for _, t, c in results if c > 0.5]
+    print(f"Page {pg}: {len(texts)} texts extracted")
+```
+Performance: ~15-20s per page at 150 DPI on CPU. Target ~30 critical pages for a full annual report (~8-10 min). Tested on PICC 2025 annual (22 pages, ~3 min total).
 
 **Solution B: Use Semi-Annual Report as Proxy**
 If the annual report has encoding issues but the semi-annual report works, extract full text from semi-annual (which has Latin fonts) and use semi-annual trends to estimate annual figures.
