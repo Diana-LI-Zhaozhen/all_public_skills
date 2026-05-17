@@ -54,7 +54,7 @@ python scripts/fetch_cninfo_notices.py \
   --output-json "/tmp/<company>_reports.json"
 ```
 
-**Key stock codes for major Chinese insurers:**
+**Key stock codes for major life insurers operating in mainland China and Hong Kong:**
 
 | Company | A-share | H-share | ADR | Remarks |
 |---------|---------|---------|-----|---------|
