@@ -2,10 +2,8 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -26,23 +24,6 @@ def to_safe_filename(name: str) -> str:
     return safe or "unnamed"
 
 
-def build_hkex_target_path(download_root: Path, item: dict) -> Path:
-    company = to_safe_filename(str(item.get("company") or ""))
-    stock_code = to_safe_filename(str(item.get("stockCode") or ""))
-    report_type = to_safe_filename(str(item.get("reportType") or ""))
-    title = to_safe_filename(str(item.get("title") or ""))
-    date = to_safe_filename(str(item.get("date") or ""))
-    file_name = to_safe_filename(f"{date}_{stock_code}_{company}_{report_type}_{title}.pdf")
-    return download_root / stock_code / file_name
-
-
-def build_hkex_repo_annual_target_path(download_root: Path, stock_code: str, year: int, url: str) -> Path:
-    suffix = Path(urlparse(url).path).suffix or ".pdf"
-    safe_code = to_safe_filename(stock_code.zfill(5))
-    file_name = f"{safe_code}_{year}_annual_report{suffix}"
-    return download_root / safe_code / file_name
-
-
 def build_cninfo_target_path(download_root: Path, item: dict) -> Path:
     company = to_safe_filename(str(item.get("company") or ""))
     report_type = to_safe_filename(str(item.get("reportType") or ""))
@@ -50,132 +31,6 @@ def build_cninfo_target_path(download_root: Path, item: dict) -> Path:
     date = to_safe_filename(str(item.get("date") or ""))
     file_name = to_safe_filename(f"{date}_{company}_{report_type}_{title}.pdf")
     return download_root / company / file_name
-
-
-def collect_hkex_files(summary: dict, download_root: Path) -> list[dict]:
-    files: list[dict] = []
-    for row in summary.get("rows", []):
-        if not isinstance(row, dict):
-            continue
-        if row.get("status") not in {"downloaded", "skipped"}:
-            continue
-        target = Path(str(row.get("filePath") or ""))
-        files.append(
-            {
-                "market": "HKEX",
-                "stockCode": str(row.get("stockCode") or ""),
-                "reportType": "annual",
-                "title": str(row.get("title") or ""),
-                "date": str(row.get("date") or row.get("year") or ""),
-                "url": str(row.get("url") or ""),
-                "filePath": str(target),
-                "exists": target.exists(),
-                "status": str(row.get("status") or ""),
-                "year": int(row.get("year") or 0),
-            }
-        )
-    return files
-
-
-def run_hkex_repo_annuals(
-    python_executable: str,
-    repo_root: Path,
-    stock_codes: list[str],
-    years: int,
-    timeout: int,
-    download_root: Path,
-) -> dict:
-    download_root_abs = download_root.resolve()
-    current_year = date.today().year
-    report_years = list(range(current_year - 1, current_year - years - 1, -1))
-    rows: list[dict] = []
-
-    for stock_code in stock_codes:
-        stock = stock_code.strip().zfill(5)
-        for year in report_years:
-            resolve_cmd = [
-                python_executable,
-                "-m",
-                "src.hkex_financial_monitor.cli",
-                "annual-url",
-                "--stock",
-                stock,
-                "--year",
-                str(year),
-                "--timeout-seconds",
-                str(timeout),
-            ]
-            try:
-                resolved = run_cmd(resolve_cmd, cwd=repo_root)
-                stdout_lines = [line.strip() for line in resolved.stdout.splitlines() if line.strip()]
-                url = next((line for line in reversed(stdout_lines) if line.startswith("http://") or line.startswith("https://")), "")
-                if not url:
-                    rows.append(
-                        {
-                            "stockCode": stock,
-                            "year": year,
-                            "status": "missing",
-                            "error": "annual-url returned no URL",
-                        }
-                    )
-                    continue
-
-                target = build_hkex_repo_annual_target_path(download_root=download_root_abs, stock_code=stock, year=year, url=url)
-                download_cmd = [
-                    python_executable,
-                    "-c",
-                    (
-                        "from pathlib import Path; "
-                        "from src.hkex_financial_monitor.downloader import download_url, build_annual_target_path; "
-                        f"url = {url!r}; "
-                        f"target = build_annual_target_path(Path({str(download_root_abs)!r}), {stock!r}, {year}, url); "
-                        f"download_url(url, target, timeout_seconds={timeout}); "
-                        "print(target)"
-                    ),
-                ]
-                downloaded = run_cmd(download_cmd, cwd=repo_root)
-                target_lines = [line.strip() for line in downloaded.stdout.splitlines() if line.strip()]
-                target_path = target_lines[-1] if target_lines else str(target)
-                rows.append(
-                    {
-                        "stockCode": stock,
-                        "year": year,
-                        "status": "downloaded" if Path(target_path).exists() else "missing",
-                        "url": url,
-                        "filePath": target_path,
-                        "title": f"{year} annual report",
-                        "date": str(year),
-                    }
-                )
-            except subprocess.CalledProcessError as exc:
-                stderr = (exc.stderr or "").strip()
-                stdout = (exc.stdout or "").strip()
-                message = stderr or stdout or str(exc)
-                status = "missing" if "No annual report URL found" in message else "failed"
-                rows.append(
-                    {
-                        "stockCode": stock,
-                        "year": year,
-                        "status": status,
-                        "error": message,
-                    }
-                )
-
-    downloaded = sum(1 for row in rows if row.get("status") == "downloaded")
-    missing = sum(1 for row in rows if row.get("status") == "missing")
-    failed = sum(1 for row in rows if row.get("status") == "failed")
-    return {
-        "repoRoot": str(repo_root),
-        "downloadRoot": str(download_root_abs),
-        "years": report_years,
-        "rows": rows,
-        "totals": {
-            "requested": len(rows),
-            "downloaded": downloaded,
-            "missing": missing,
-            "failed": failed,
-        },
-    }
 
 
 def collect_cninfo_files(items: list[dict], download_root: Path) -> list[dict]:
@@ -194,6 +49,48 @@ def collect_cninfo_files(items: list[dict], download_root: Path) -> list[dict]:
                 "url": str(item.get("url") or ""),
                 "filePath": str(target),
                 "exists": target.exists(),
+            }
+        )
+    return files
+
+
+def collect_hkex_files(items: list[dict], download_root: Path) -> list[dict]:
+    """Collect HKEX file info from annual-by-year search + download results."""
+    import glob as glob_mod
+
+    files: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        stock_code = str(item.get("stockCode") or "").zfill(5)
+        year = str(item.get("year") or item.get("date") or "")
+
+        # The download_hkex_pdfs.py uses: {date}_{stockCode}_{company}_{reportType}_{title}.pdf
+        # with date=str(year), company=stockCode, reportType="annual"
+        # Search for any matching file by glob
+        stock_dir = download_root / stock_code
+        matched_files: list[Path] = []
+        if stock_dir.is_dir():
+            pattern = f"*{stock_code}*{year}*annual*.pdf"
+            matched_files = [Path(f) for f in glob_mod.glob(str(stock_dir / pattern))]
+
+        target = matched_files[0] if matched_files else stock_dir / f"{stock_code}_{year}_annual_report.pdf"
+        file_exists = target.exists() and target.stat().st_size > 0
+
+        status = "downloaded" if file_exists else str(item.get("status") or "unknown")
+
+        files.append(
+            {
+                "market": "HKEX",
+                "stockCode": stock_code,
+                "reportType": "annual",
+                "title": str(item.get("title") or f"{year} annual report"),
+                "date": year,
+                "year": int(year) if year.isdigit() else 0,
+                "url": str(item.get("url") or ""),
+                "filePath": str(target),
+                "exists": file_exists,
+                "status": status,
             }
         )
     return files
@@ -264,14 +161,7 @@ def main() -> None:
     parser.add_argument("--cninfo-report-types", default="annual", help="annual,semi_annual,q1,q3,quarterly")
 
     parser.add_argument("--hkex-stocks", default="", help="Comma-separated HKEX stock codes, e.g. 09988")
-    parser.add_argument("--hkex-report-types", default="annual", help="annual,interim,quarterly,results,esg,financial")
-    parser.add_argument("--hkex-pages", type=int, default=3)
-    parser.add_argument("--hkex-per-type-mode", choices=["latest", "all"], default="latest")
-    parser.add_argument(
-        "--hkex-repo-root",
-        default="tmp/Claw/skills/hkex-pdf-downloader",
-        help="Local path to the authoritative Claw HKEX repo skill root",
-    )
+    parser.add_argument("--hkex-report-types", default="annual", help="annual (only annual supported in HKEX cross-market mode)")
 
     parser.add_argument("--sec-companies", default="", help="Comma-separated SEC queries, e.g. BABA,Alibaba Group")
     parser.add_argument("--sec-report-kind", default="annual", help="annual | quarterly | all | custom forms")
@@ -300,6 +190,8 @@ def main() -> None:
     skills_dir = script_dir.parent
     cninfo_fetch_script = skills_dir / "cninfo-pdf-fetch" / "scripts" / "fetch_cninfo_notices.py"
     cninfo_download_script = skills_dir / "cninfo-pdf-fetch" / "scripts" / "download_cninfo_pdfs.py"
+    hkex_fetch_script = skills_dir / "scripts/hkex/fetch_hkex_notices.py"
+    hkex_download_script = skills_dir / "scripts/hkex/download_hkex_pdfs.py"
     sec_batch_script = skills_dir / "sec-edgar-filings-fetch" / "scripts" / "run_sec_edgar_batch.py"
 
     tmp_root = Path(args.tmp_root)
@@ -320,6 +212,7 @@ def main() -> None:
         "files": [],
     }
 
+    # ── CNINFO ──────────────────────────────────────────────────────
     cninfo_files: list[dict] = []
     if args.cninfo_company_query.strip():
         cninfo_stage1_json = tmp_root / "cninfo" / "stage1.json"
@@ -394,49 +287,90 @@ def main() -> None:
                 "filesTotal": 0,
             }
 
+    # ── HKEX (annual-by-year via HKEX Disclosure title search, no repo dependency) ──
     hkex_files: list[dict] = []
     if args.hkex_stocks.strip():
-        hkex_summary_json = tmp_root / "hkex" / "batch-summary.json"
-        hkex_repo_root = Path(args.hkex_repo_root)
+        hkex_search_json = tmp_root / "hkex" / "search-results.json"
+        hkex_download_items_json = tmp_root / "hkex" / "download-items.json"
 
         try:
-            if not hkex_repo_root.exists():
-                raise FileNotFoundError(f"HKEX repo root not found: {hkex_repo_root}")
-            if args.hkex_report_types.strip().lower() != "annual":
-                raise ValueError("Current cross-market HKEX integration uses the Claw repo annual-url workflow and supports annual only")
+            # Step 1: Search for annual report URLs via HKEX Disclosure title search
+            hkex_fetch_cmd = [
+                sys.executable,
+                str(hkex_fetch_script),
+                "--mode", "annual-by-year",
+                "--stock-codes", args.hkex_stocks,
+                "--years", str(args.years),
+                "--timeout", str(args.timeout),
+                "--output-json", str(hkex_search_json),
+            ]
+            run_cmd(hkex_fetch_cmd)
+            search_results = json.loads(hkex_search_json.read_text(encoding="utf-8-sig"))
 
-            hkex_summary = run_hkex_repo_annuals(
-                python_executable=sys.executable,
-                repo_root=hkex_repo_root,
-                stock_codes=[x.strip() for x in args.hkex_stocks.split(",") if x.strip()],
-                years=args.years,
-                timeout=args.timeout,
+            # Step 2: Extract found items for download
+            all_items = search_results.get("items", [])
+            found_items = [item for item in all_items if item.get("status") == "found"]
+
+            # Convert to format compatible with download_hkex_pdfs.py
+            # download_hkex_pdfs.py expects a list of {url, company, stockCode, reportType, title, date}
+            download_items = []
+            for item in found_items:
+                download_items.append({
+                    "url": item["url"],
+                    "company": item.get("stockCode", ""),
+                    "stockCode": item.get("stockCode", ""),
+                    "reportType": "annual",
+                    "title": item.get("title", ""),
+                    "date": str(item.get("year", "")),
+                    "year": str(item.get("year", "")),
+                })
+
+            # Write download items JSON
+            hkex_download_items_json.parent.mkdir(parents=True, exist_ok=True)
+            hkex_download_items_json.write_text(
+                json.dumps(download_items, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
+            # Step 3: Download PDFs
+            hkex_download_cmd = [
+                sys.executable,
+                str(hkex_download_script),
+                "--items-json", str(hkex_download_items_json),
+                "--output-dir", args.hkex_download_output_dir,
+                "--timeout", str(args.timeout),
+            ]
+            run_cmd(hkex_download_cmd)
+
+            # Step 4: Collect file info
+            hkex_files = collect_hkex_files(
+                items=download_items,
                 download_root=Path(args.hkex_download_output_dir),
             )
-            hkex_summary_json.parent.mkdir(parents=True, exist_ok=True)
-            hkex_summary_json.write_text(json.dumps(hkex_summary, ensure_ascii=False, indent=2), encoding="utf-8")
-            hkex_summary = json.loads(hkex_summary_json.read_text(encoding="utf-8-sig"))
-            hkex_files = collect_hkex_files(summary=hkex_summary, download_root=Path(args.hkex_download_output_dir))
             ok = market_ok_hkex(hkex_files)
+
+            search_totals = search_results.get("totals", {})
             result["markets"]["HKEX"] = {
                 "status": "success" if ok else "partial_or_empty",
-                "summaryJson": str(hkex_summary_json),
-                "requested": hkex_summary.get("totals", {}).get("requested", 0),
-                "success": hkex_summary.get("totals", {}).get("downloaded", 0),
-                "failed": hkex_summary.get("totals", {}).get("failed", 0),
+                "searchJson": str(hkex_search_json),
+                "searchMode": "annual-by-year",
+                "requested": len(all_items),
+                "found": search_totals.get("found", 0),
+                "missing": search_totals.get("missing", 0),
+                "failed": search_totals.get("failed", 0),
                 "filesFound": sum(1 for x in hkex_files if x.get("exists")),
                 "filesTotal": len(hkex_files),
-                "repoRoot": str(hkex_repo_root),
             }
         except Exception as exc:
             result["markets"]["HKEX"] = {
                 "status": "failed",
                 "error": str(exc),
-                "summaryJson": str(hkex_summary_json),
+                "searchJson": str(hkex_search_json),
+                "searchMode": "annual-by-year",
                 "filesFound": 0,
                 "filesTotal": 0,
             }
 
+    # ── SEC ──────────────────────────────────────────────────────────
     sec_files: list[dict] = []
     if args.sec_companies.strip():
         sec_summary_json = tmp_root / "sec-edgar" / "batch-summary.json"
