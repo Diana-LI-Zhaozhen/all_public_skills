@@ -1,16 +1,15 @@
 ---
 name: insurance-financial-analysis
 description: >-
-  Systematic financial analysis of Chinese A-share/H-share listed insurance
-  companies under IFRS 17 / IFRS 9 / C-ROSS. Fetches annual/semi-annual
-  reports from CNInfo, extracts IFRS 17 key metrics (CSM, insurance service
+  Systematic financial analysis of A-share/H-share listed insurance
+  companies under IFRS 17 / IFRS 9 / C-ROSS / HKRBC. Fetches annual/semi-annual
+  reports from CNInfo/ HKEX/ SEC EDGAR, extracts IFRS 17 key metrics (CSM, insurance service
   result, investment portfolio), and produces structured earnings-quality
-  and investment-performance assessments. For life insurers, P&C insurers,
-  and re-insurers listed in China.
+  and investment-performance assessments. For life insurers listed in mainland China, Hong Kong and U.S..
 metadata:
   related-skills:
     - ifrs17-agent        # IFRS 17 accounting standard knowledge base
-    - accountant-alice    # manufacturing/retail financial analysis (NOT for insurers)
+    - all-market-fillings-fetch` # Cross-market (A+H+US) report fetching
     - strategist-ariston  # asset-level trading decisions (complementary)
 ---
 
@@ -18,22 +17,22 @@ metadata:
 
 ## Overview
 
-Analyze Chinese insurance companies' financial reports under IFRS 17 and IFRS 9. This skill covers the end-to-end workflow: data acquisition (CNInfo PDFs), structured data extraction, IFRS 17 metric calculation, investment portfolio decomposition, and earnings-quality assessment.
+Analyze Chinese and Hong Kong Life insurance companies' financial reports under IFRS 17 and IFRS 9. This skill covers the end-to-end workflow: data acquisition, structured data extraction, IFRS 17 metric calculation, investment portfolio decomposition, and earnings-quality assessment.
 
 **This is NOT about IFRS 17 accounting theory** — for that, load `ifrs17-agent` first, which has the full knowledge base (7 chapters, 25 formulas). This skill is about **applying that knowledge to real Chinese insurer filings**.
 
 ## When to Use
 
 Trigger when the user asks to analyze:
-- A Chinese insurance company (life, P&C, or health)
+- A life insurance company
 - "分析xx保险的财报"/"投资表现"/"盈利能力"
-- An insurer's investment portfolio or earnings quality under the new会计准则
+- An insurer's investment portfolio or earnings quality under the new accounting rules
 - CSM trends, insurance service results, or IFRS 17 profit decomposition
-- Comparison between Chinese insurers (e.g., 中国人寿 vs 中国平安 vs 中国太保 vs 新华保险)
+- Comparison between life insurers
 
 ## Prerequisites
 
-- `cninfo-pdf-fetch` skill available (for fetching A-share annual/semi-annual reports)
+- `all-market-fillings-fetch` skill available (for fetching A-share/HK/US annual/semi-annual reports)
 - `pymupdf` or `marker-pdf` for extracting text from PDF annual reports
 - Basic IFRS 17 knowledge — consider loading `ifrs17-agent` for formula/standard references
 - Data sources: CNInfo for A-share, HKEX for H-share, SEC EDGAR for ADR filings
@@ -50,20 +49,26 @@ python scripts/fetch_cninfo_notices.py \
   --stock-code "<6位代码>" \
   --report-types "annual,semi_annual" \
   --time-mode "range" \
-  --range-years 2 \
+  --range-years 5 \
   --per-type-mode "all" \
   --output-json "/tmp/<company>_reports.json"
 ```
 
 **Key stock codes for major Chinese insurers:**
-| Company | A-share | H-share | ADR |
-|---------|---------|---------|-----|
-| 中国人寿 | 601628 | 2628 | LFC |
-| 中国平安 | 601318 | 2318 | PNGAY |
-| 中国太保 | 601601 | 2601 | — |
-| 新华保险 | 601336 | 1336 | — |
-| 中国人保 | 601319 | 1339 | — |
-| 中国再保险 | — | 1508 | — |
+
+| Company | A-share | H-share | ADR | Remarks |
+|---------|---------|---------|-----|---------|
+| China Life Insurance (中国人寿) | 601628 | 2628 | LFC | 独立上市（A股、H股、ADR） |
+| Ping An Insurance (中国平安) | 601318 | 2318 | PNGAY | 独立上市（A股、H股、ADR） |
+| China Pacific Insurance (中国太保) | 601601 | 2601 | — | 独立上市（A股、H股） |
+| New China Life Insurance (新华保险) | 601336 | 1336 | — | 独立上市（A股、H股） |
+| PICC (中国人保) | 601319 | 1339 | — | 独立上市（A股、H股） |
+| AIA (友邦保险) | — | 01299 | AAGIY | 独立上市（H股、ADR） |
+| Prudential (保诚) | — | 02378 | PUK | 独立上市（H股、ADR） |
+| Manulife (宏利金融) | — | 00945 | MFC | 独立上市（H股、ADR） |
+| Sun Life (永明金融) | — | — | SLF | 独立上市（ADR，未在香港上市） |
+| HSBC Life (汇丰人寿) | — | **00005** | **HSBC** | 未独立上市。此处列母公司汇丰控股（00005.HK）的H股及ADR（NYSE: HSBC）。汇丰人寿为汇丰控股旗下寿险板块 |
+| BOC Life (中银人寿) | — | **02388** | — | 未独立上市。此处列母公司中银香港（02388.HK）的H股。中银人寿为中银香港全资附属公司 |
 
 **For multi-market companies**, use `all-market-fillings-fetch` to fetch A+H simultaneously.
 
@@ -80,7 +85,7 @@ for i, page in enumerate(doc):
 doc.close()
 ```
 
-Chinese insurer annual reports are typically 200-400 pages. Target extraction size: 200K-500K chars for a 2-year report.
+Insurer annual reports are typically 200-400 pages. Target extraction size: 200K-500K chars for a 2-year report.
 
 ### Step 3: Extract IFRS 17 Key Metrics
 
@@ -223,9 +228,12 @@ Output a structured report covering:
 
 ### Data Extraction
 - ❌ **Don't use accountant-alice for insurers** — it's inventory/COGS-based, completely wrong for insurance
-- ❌ **Don't rely only on利润表 summary numbers** — IFRS 17 requires reading the notes (附注) for CSM, insurance finance splits, and investment portfolio detail
+- ❌ **Don't rely only on 利润表 summary numbers** — IFRS 17 requires reading the notes (附注) for CSM, insurance finance splits, and investment portfolio detail
 - ❌ **Don't assume "投资收益" in the P&L is the same as "总投资收益"** — the P&L line only shows a portion; total investment income adds fair value changes, interest income, and subtracts impairments
+- ❌ **Some companies have life insurance as **only one part** of a larger, diversified financial group (e.g., Ping An, PICC, Xinhua Insurance). Do not use their consolidated market data (e.g., total assets, ROE, asset classification) as a proxy for the life insurance segment without adjustment.**
 - ✅ Always extract both the income statement and the insurance contract notes (保险合同附注)
+- ✅ For a **pure‑play life insurer** (e.g., China Life, AIA, Prudential, Manulife, Sun Life), fill in its own stock codes under **A‑share**, **H‑share**, or **ADR** as applicable. In the `Remarks` column, briefly state the listing status, e.g., *“Listed on A‑share, H‑share, and ADR (OTC/NYSE)”*.
+- ✅ If the life insurance entity is **not independently listed** but is a wholly owned subsidiary / business segment of a listed parent company (e.g., HSBC Life, BOC Life), **fill the parent company’s stock codes** into the corresponding market columns. In `Remarks`, explicitly note: *“Not independently listed. Parent company [Name] (code) is shown instead.”*
 
 ### IFRS 17 Interpretation
 - ❌ **Don't read "保险服务业绩" as "underwriting profit"** — it's not the same as old GAAP "承保利润". IFRS 17 splits insurance finance differently.
@@ -234,15 +242,15 @@ Output a structured report covering:
 - ✅ The CSM is the best single metric for future profit trajectory
 
 ### Company-Specific
-- ❌ **Don't use 新华保险 or 中国人保 market data without checking** they have different business mixes (more group/health insurance)
-- ✅ 中国平安 is a composite insurer+bank+asset manager — its insurance segment analysis requires extra decomposition
-  - Group total assets (13.9T) include ~3.4T bank loans and ~3.6T deposits — these are NOT insurance assets
-  - Insurance investment portfolio is ~6.49T, NOT the same as total group financial assets (~7.82T)
-  - Group ROE (~14%) is dragged down by banking; insurance-segment ROE is higher (~21%)
-  - Ping An uses 债权型/股权型 asset classification, while pure insurers use 固定到期日/权益类 — this classification difference matters when comparing portfolio structures directly
-- ✅ **Ping An's 营运利润 (Operating Profit) is a trademark concept** not used by other Chinese insurers. It strips out short-term investment volatility by locking life investment returns at 4.0%. Do NOT compare it to competitors' "operating profit" — they don't have the same concept.
-- ✅ **CSM trajectory divergence**: As of 2025, 中国人寿 CSM is growing (+3.5%) while 中国平安 CSM is declining (-0.8%). This is a critical comparative metric that signals different futures despite similar current profit levels.
-- ✅ Always check if the company adopted IFRS 17 / IFRS 9 from 2023 (CTA 기준) — some figures need restatement adjustments
+| Company | Warning |
+|---------|---------|
+| **Xinhua Insurance (新华保险)** & **PICC (中国人保)** | Their business mix differs significantly from pure life insurers. PICC has large health and property/casualty exposure; Xinhua’s composition also includes group/health business. **Always check segment reporting before using consolidated figures.** |
+| **Ping An Insurance (中国平安)** | A composite of insurance + banking + asset management. The consolidated group data **cannot** be treated as insurance‑only data. |
+| | – Group total assets (~13.9T RMB) include ~3.4T bank loans and ~3.6T deposits → **not insurance assets**. |
+| | – The insurance investment portfolio is ~6.49T RMB, **not** the group’s total financial assets (~7.82T). |
+| | – Group ROE (~14%) is diluted by banking; the insurance segment ROE is higher (~21%). |
+| | – Ping An uses **债权型/股权型** (debt/equity‑style) asset classification, while pure insurers use **固定到期日/权益类** (fixed maturity/equity). This difference matters when comparing portfolio structures directly. |
+
 
 ## Verification
 
@@ -258,12 +266,10 @@ After analysis, verify:
 ## References
 
 See `references/` directory for worked examples:
-- `china-life-2024-2025.md` — Full analysis of 中国人寿 under IFRS 17 (2024-2025). Income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights.
-- `ping-an-2024-2025.md` — Full analysis of 中国平安 under IFRS 17 (2024-2025). Consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio analysis.
-- `multi-insurer-reference-2021-2025.md` — **Comprehensive multi-insurer reference dataset** covering 9 insurers (中国人寿, 中国平安, CPIC, 新华保险, 中国太平, AIA, Prudential, Manulife, FWD) for 5 years (2021-2025). Sources explicitly stated: CNInfo A-share, HKEX H-share, yfinance, annual reports. Currency and IFRS 17/IFRS 4 basis noted per data point. Cross-company comparison tables included. Data gaps explicitly flagged for IFRS 17 specific metrics (CSM, NBV, EV, yields) that require PDF annual report extraction.
+- `china-life.md` — Full analysis of 中国人寿 under IFRS 17. Income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights.
+- `ping-an.md` — Full analysis of 中国平安 under IFRS 17. Consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio analysis.
 
 ## See Also
 
 - `ifrs17-agent` — IFRS 17 standard knowledge base (formulas, models, accounting entries)
-- `cninfo-pdf-fetch` — Fetch Chinese insurer annual/semi-annual PDFs
 - `all-market-fillings-fetch` — Cross-market (A+H+US) report fetching
