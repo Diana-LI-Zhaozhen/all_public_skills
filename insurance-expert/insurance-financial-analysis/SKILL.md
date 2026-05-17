@@ -9,7 +9,7 @@ description: >-
 metadata:
   related-skills:
     - ifrs17-agent        # IFRS 17 accounting standard knowledge base
-    - all-market-fillings-fetch` # Cross-market (A+H+US) report fetching
+    - all-market-fillings-fetch # Cross-market (A+H+US) report fetching
     - strategist-ariston  # asset-level trading decisions (complementary)
 ---
 
