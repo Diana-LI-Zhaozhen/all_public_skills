@@ -41,3 +41,26 @@
 - Canadian filings also available via SEDAR+
 - SLF is NOT listed in Hong Kong (no H-share)
 - To complete this analysis: download full annual reports from Sun Life IR website
+
+## SEC 40-F Cover-Only Issue — Resolution Path
+
+**Root cause:** Canadian issuers filing Form 40-F with SEC submit only a cover page as the primary document. The filing index shows exhibits (`a2025q4slfmdalive.htm` - MD&A, `annualaifmasterlivermasterq.htm` - AIF) but these are pointers accessible through SEC's interactive iXBRL viewer.
+
+**SEC EDGAR exhibits are blocked** — attempts to download exhibit files return SEC error pages ("Your Request Originates from an Undeclared Automated Tool").
+
+**To fix:**
+
+### Option A: Download via SEC iXBRL Viewer (requires browser)
+```
+https://www.sec.gov/ix?doc=/Archives/edgar/data/1097362/0001097362-26-000010/slf-20251231.htm
+```
+
+### Option B: Download from Sun Life Investor Relations
+Go to https://www.sunlife.com/en/investors/ → Annual Reports section
+Sun Life publishes full annual reports as downloadable PDFs.
+
+### Option C: SEDAR+ (Canadian securities regulator)
+Search for "Sun Life Financial" at https://www.sedarplus.ca/
+Note: SEDAR+ blocks automated access; requires manual browser interaction.
+
+See `pdf-encoding-troubleshooting` skill for full workflow on SEC 40-F cover-only filings.

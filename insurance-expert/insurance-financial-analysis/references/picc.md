@@ -98,3 +98,28 @@
 - 2024 annual + 2025 semi-annual from CNInfo PDFs via pymupdf
 - 2025 annual PDF (12MB) has font encoding issues — numbers not extractable
 - PICC is analyzed at both group and segment level (life/health/P&C)
+
+## PDF Encoding Issue — Resolution Path
+The 2025 annual PDF uses ONLY CJK fonts (MHeiPRC) with `Identity-H` CMap and **no ToUnicode mapping**. This prevents all text extraction tools (pymupdf, pdfplumber, pypdf, pdfminer) from extracting numbers.
+
+**2024 annual and 2025 semi-annual work fine** — they embed Latin fonts (FrutigerLTPro) which handle digits correctly.
+
+**To fix:** OCR via Tesseract with Chinese language pack:
+```bash
+sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
+pip install pytesseract Pillow
+python3 -c "
+import fitz, pytesseract
+from PIL import Image
+import io
+doc = fitz.open('references/pdfs/picc/中国人保/2026-03-26_中国人保_annual_中国人保2025年年度报告.pdf')
+text = ''
+for page in doc:
+    pix = page.get_pixmap(dpi=300)
+    img = Image.open(io.BytesIO(pix.tobytes('png')))
+    text += pytesseract.image_to_string(img, lang='chi_sim+eng') + '\n'
+doc.close()
+open('references/pdfs/picc/picc_2025_ocr.txt', 'w').write(text)
+"
+```
+See `pdf-encoding-troubleshooting` skill for full workflow.
