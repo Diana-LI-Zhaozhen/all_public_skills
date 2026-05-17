@@ -270,6 +270,55 @@ Output a structured report covering:
 - ✅ Remember that IFRS 17 insurance revenue is **not** premiums received — it's the release of the liability for remaining coverage
 - ✅ The CSM is the best single metric for future profit trajectory
 
+### Text Extraction Troubleshooting
+
+When pymupdf or pdfplumber fail to extract financial data, use the following decision tree:
+
+**Symptom A: Chinese text present, but numbers in tables are blank/missing**
+Likely cause: PDF uses `Identity-H` CID font encoding without a ToUnicode CMap. The Chinese characters are extracted (from font glyph naming) but digits and punctuation are not mapped to Unicode.
+- Fix 1: Try `pypdf` (`pip install pypdf; PdfReader`), which uses a different text extraction engine that sometimes handles CID fonts better.
+- Fix 2: Install Tesseract OCR + Chinese language pack and render each page to image:
+  ```bash
+  sudo apt install tesseract-ocr tesseract-ocr-chi-sim
+  pip install pytesseract pdf2image
+  python3 -c "
+  from pdf2image import convert_from_path
+  import pytesseract
+  images = convert_from_path('report.pdf', dpi=300)
+  text = '\n'.join(pytesseract.image_to_string(img, lang='chi_sim+eng') for img in images)
+  open('report_ocr.txt', 'w').write(text)
+  "
+  ```
+- Known affected files: PICC 2025 Annual (12MB, 278 pages, fonts: SWQPEV+MHeiPRC-Light, SWPSLM+MHeiPRC-Bold, Identity-H encoding)
+- Not affected: Most CPIC, Xinhua PDFs extracted cleanly
+
+**Symptom B: Extracted text is very short (~10-15KB), about "notification"**
+Likely cause: On HKEX, some companies (especially AIA) file two PDFs on the same date — a **notification letter** (~300KB, ~14KB text) telling shareholders the annual report is available on the website, and the **actual annual report** (3-8MB, 1000+ pages).
+- Fix: If extracted text has "NOTIFICATION LETTER" or "通知信函" in the first 50 chars, this is the wrong PDF. Look for another HKEX filing on the same date with a larger file size.
+- The fetch_hkex_notices.py title quality scorer prefers exact "年度報告" matches. But for AIA, the actual annual report is filed separately from the notification letter. When searching with `t1code=1` (reports category) and `t2code=-1` (all sub-types), additional PDFs appear that the generic title search misses.
+- Key: Always check file size. Annual reports are 3-80MB; notification letters are <500KB.
+
+**Symptom C: SEC EDGAR 40-F filing yields only cover document data (~160KB HTM, ~18KB TXT)**
+Likely cause: The filer is a **Canadian issuer** (Manulife, Sun Life, etc.). Canadian 40-F filers commonly file the full financial statements as **exhibits** to the 40-F, not in the primary iXBRL document. The SEC primary document is just a cover page.
+- Fix: Find and download exhibit documents from the same SEC filing directory.
+  ```bash
+  # The exhibits are in the same SEC directory as the primary document
+  # Parse the HTM to find exhibit links, then download each one
+  BASE_URL="https://www.sec.gov/Archives/edgar/data/{CIK}/{ACCESSION_NO_DASHES}"
+  # Key exhibits to look for:
+  # - MD&A file (often named *md*a*.htm or *management*)
+  # - Annual Information Form (*aif*)
+  curl -sL "$BASE_URL/a2025q4slfmdalive.htm" -o mda.htm  # example for SLF
+  ```
+- For Manulife (CIK 1086888): The full annual report is also available on HKEX (stock code 00945) as a bilingual PDF. Use `all-market-fillings-fetch --mode annual-by-year` for HKEX.
+- For Sun Life (CIK 1097362): Only on SEC and SEDAR+ (not HKEX-listed). Must extract from SEC exhibits.
+- Known affected: Manulife MFC (2024/2025 40-F), Sun Life SLF (all years)
+
+**Symptom D: OTC ADR (AAGIY, PNGAY, etc.) not found in SEC EDGAR**
+Likely cause: OTC ADRs are not in SEC's company_tickers.json. The SEC resolver fails with "No SEC filer resolved from query."
+- Fix: Use the company's **primary exchange** instead. For AIA (AAGIY → 01299.HK on HKEX), for Ping An (PNGAY → 2318.HK or 601318.SH).
+- Exception: HSBC (HSBC) and Prudential (PUK) ARE in the ticker map because their ADRs trade on NYSE, not OTC.
+
 ### Company-Specific
 | Company | Warning |
 |---------|---------|
@@ -291,14 +340,126 @@ After analysis, verify:
 - [ ] Earnings quality assessed (not just headline profit growth)
 - [ ] IFRS 17 transition adjustments noted (2023 adoption impact)
 
+---
+
+## PDF Encoding & SEC Filing Troubleshooting
+
+This section documents problems encountered during real-world insurance report extraction. Use it as a reference when extraction fails.
+
+### Problem 1: Identity-H CID Font Encoding (Chinese Financial PDFs)
+
+**Symptoms:**
+- Chinese characters extracted but numbers are blank/missing
+- Font encoding shows `Identity-H` or `Identity-V`
+- Zero `ToUnicode` CMap entries in the PDF
+- All standard tools fail: pymupdf, pdfplumber, pypdf, pdfminer
+
+**Root Cause:**
+The PDF uses ONLY CJK fonts (e.g., MHeiPRC) with Identity-H CMap and NO ToUnicode mapping. Numbers (0-9) are stored as CID glyph indices that cannot be mapped to Unicode. This is a PDF generation quality issue from certain iText / 第三方PDF生成器 versions.
+
+Inspection command:
+```bash
+python3 -c "
+import fitz
+doc = fitz.open('problem.pdf')
+page = doc[0]
+fonts = page.get_fonts()
+for f in fonts:
+    print(f'Font: {f[3]}, Enc: {f[4]}')
+doc.close()
+"
+```
+
+**Solution A: OCR with Tesseract (Recommended)**
+```bash
+sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-eng
+pip install pytesseract Pillow pymupdf
+```
+Then use the script at `scripts/ocr_problematic_pdf.py`:
+```bash
+python3 scripts/ocr_problematic_pdf.py <input.pdf> <output.txt> --dpi 300
+```
+
+**Solution B: Use Semi-Annual Report as Proxy**
+If the annual report has encoding issues but the semi-annual report works, extract full text from semi-annual (which has Latin fonts) and use semi-annual trends to estimate annual figures.
+
+**Solution C: Render-to-Image Only (for manual inspection)**
+```python
+doc = fitz.open("problem.pdf")
+for i, page in enumerate(doc):
+    pix = page.get_pixmap(dpi=200)
+    pix.save(f"page_{i+1}.png")
+```
+Then use any OCR tool or manual review on the images.
+
+### Problem 2: SEC EDGAR 40-F Cover-Only Filings (Canadian Issuers)
+
+**Symptoms:**
+- SEC 40-F filing is only ~1.8MB HTM but actual financial text is minimal
+- Filing contains inline XBRL but only ~27 metrics (entity identifiers, pension assumptions)
+- No revenue, CSM, balance sheet, or net income data
+- Affects: Canadian filers filing 40-F with SEC (Manulife, Sun Life)
+
+**Root Cause:**
+Canadian issuers file their annual reports on **Form 40-F** (not 10-K or 20-F). SEC EDGAR accepts 40-F filings where the **primary document is a cover page only**. The actual financial statements are filed as **exhibits** that may be:
+1. Available through SEC's iXBRL viewer (`/ix?doc=...`)
+2. Available as separate exhibit files (XML/XBRL format)
+3. Only on **SEDAR+** (Canada's securities filing system)
+4. Only on the **company's IR website**
+
+**Solution A: Download Exhibits via SEC iXBRL Viewer**
+```bash
+curl -L "https://www.sec.gov/ix?doc=/Archives/edgar/data/{CIK}/{ACC}/slf-20251231.htm" \
+  -H "User-Agent: YourCompanyName contact@example.com" \
+  -o full_filing.htm
+```
+
+**Solution B: Download from SEDAR+** (Requires manual browser interaction)
+1. Go to https://www.sedarplus.ca/
+2. Search for the issuer
+3. Find the annual report/MD&A
+4. SEDAR+ blocks automated access
+
+**Solution C: Download from Company Investor Relations**
+- Sun Life: https://www.sunlife.com/en/investors/
+- Manulife: https://www.manulife.com/en/investors.html
+- Search for "Annual Reports" or "Financial Reporting" section
+
+**Solution D: Use SEC EDGAR Filing Index to Find Exhibits**
+```bash
+# Get filing index listing all documents in this filing
+curl -s "https://www.sec.gov/Archives/edgar/data/{CIK}/{ACC}/index.json" \
+  -H "User-Agent: CompanyName contact@example.com"
+```
+
+### Known Cases
+
+| Company | Issue | PDF | Working Tool | Notes |
+|---------|-------|-----|--------------|-------|
+| PICC 2025 Annual (601319) | Identity-H no ToUnicode | 12MB, 278pp | OCR (Tesseract) | 2024 annual & 2025 semi work fine |
+| Manulife SEC 40-F (MFC) | Cover-only filing | 160-195KB | HKEX annual reports | 00945.HK has full PDFs |
+| Sun Life SEC 40-F (SLF) | Cover-only filing | 1.8MB iXBRL | Company IR or SEDAR+ | SLF not listed in HK |
+
+### Verification After Troubleshooting
+
+- [ ] Numbers are present and match expected scale
+- [ ] Chinese characters decode correctly (no mojibake)
+- [ ] Financial tables have readable column/row headers
+- [ ] SEC exhibits contain actual financial data (not just pointers)
+
 ## References
 
-See `references/` directory per-company analysis files:
+See `references/` directory:
+
+**Per-company analysis files:**
 - `china-life.md` — Full analysis of 中国人寿 under IFRS 17. Income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights.
 - `ping-an.md` — Full analysis of 中国平安 under IFRS 17. Consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio analysis.
 - `cpic.md`, `xinhua.md`, `picc.md`, `aia.md`, `prudential.md`, `manulife.md`, `sun-life.md`, `hsbc-life.md`, `boc-life.md` — Company profiles with stock codes and listing status. Analysis summaries populated after PDF extraction.
 
-PDFs are stored locally in `references/pdfs/<company>/` to avoid re-downloading.
+**Cross-company reference:**
+- `csm-comparison.md` — CSM balance (FY2025), USD-normalized rankings, growth trajectory, new business CSM coverage ratios across all 11 tracked insurers.
+
+**PDF storage:** `references/pdfs/<company>/` — local cache to avoid re-downloading.
 
 ## See Also
 
