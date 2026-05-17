@@ -258,9 +258,9 @@ After analysis, verify:
 ## References
 
 See `references/` directory for worked examples:
-- `china-life-2024-2025.md` — Full analysis of 中国人寿 under IFRS 17. Includes income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights (profit attribution, investment strategy signals, risk flags).
-- `ping-an-2024-2025.md` — Full analysis of 中国平安 under IFRS 17. Includes consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio (债权型/股权型 classification), profitability by segment, and risk flags vs pure life insurers.
-- (Add more as analyzed: tai-bao, xinhua, ren-bao, etc.)
+- `china-life-2024-2025.md` — Full analysis of 中国人寿 under IFRS 17 (2024-2025). Income statement, balance sheet, CSM, investment portfolio, yields, and analytical insights.
+- `ping-an-2024-2025.md` — Full analysis of 中国平安 under IFRS 17 (2024-2025). Consolidated + segment data, CSM decline analysis, 营运利润 concept, investment portfolio analysis.
+- `multi-insurer-reference-2021-2025.md` — **Comprehensive multi-insurer reference dataset** covering 9 insurers (中国人寿, 中国平安, CPIC, 新华保险, 中国太平, AIA, Prudential, Manulife, FWD) for 5 years (2021-2025). Sources explicitly stated: CNInfo A-share, HKEX H-share, yfinance, annual reports. Currency and IFRS 17/IFRS 4 basis noted per data point. Cross-company comparison tables included. Data gaps explicitly flagged for IFRS 17 specific metrics (CSM, NBV, EV, yields) that require PDF annual report extraction.
 
 ## See Also
 
